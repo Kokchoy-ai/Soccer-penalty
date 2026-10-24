@@ -8,7 +8,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Vercelda: Turso (TURSO_DATABASE_URL + TURSO_AUTH_TOKEN).
 // Lokal: server/data/soccer_penalty.db fayli.
 const LOCAL_PATH = path.join(__dirname, 'data', 'soccer_penalty.db');
-const remoteUrl = process.env.TURSO_DATABASE_URL;
+// trim(): qiymat oxiridagi bo'sh joy yoki BOM tufayli URL buzilmasin
+const remoteUrl = process.env.TURSO_DATABASE_URL?.trim();
 
 if (!remoteUrl) fs.mkdirSync(path.dirname(LOCAL_PATH), { recursive: true });
 
@@ -16,7 +17,7 @@ export const DB_PATH = remoteUrl || LOCAL_PATH;
 
 const client = createClient({
   url: remoteUrl || `file:${LOCAL_PATH.replace(/\\/g, '/')}`,
-  authToken: process.env.TURSO_AUTH_TOKEN,
+  authToken: process.env.TURSO_AUTH_TOKEN?.trim(),
 });
 
 async function migrate() {

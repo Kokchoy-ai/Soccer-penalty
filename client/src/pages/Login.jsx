@@ -30,7 +30,7 @@ export default function Login() {
     <AuthLayout title="Kirish">
       <form onSubmit={onSubmit} className="form">
         <label>
-          Login yoki email
+          Login
           <input value={form.login} onChange={set('login')} required />
         </label>
         <label>

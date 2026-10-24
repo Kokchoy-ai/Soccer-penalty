@@ -30,10 +30,13 @@ async function createSession(userId) {
   return token;
 }
 
+const PLACEHOLDER_EMAIL = '@user.local';
+
 const publicUser = (u) => ({
   id: u.id,
   username: u.username,
-  email: u.email,
+  // Ichki o'rinbosar emaillar (@user.local, @telegram.local) ko'rsatilmaydi
+  email: u.email.endsWith('.local') ? null : u.email,
   avatar: u.avatar,
   favoriteTeam: u.favorite_team,
   createdAt: u.created_at,
@@ -42,23 +45,20 @@ const publicUser = (u) => ({
 // --- Ro'yxatdan o'tish ---
 app.post('/api/register', async (req, res) => {
   const username = String(req.body?.username ?? '').trim();
-  const email = String(req.body?.email ?? '').trim().toLowerCase();
   const password = String(req.body?.password ?? '');
 
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     return res.status(400).json({ error: "Login 3–20 belgi bo'lishi kerak (harf, raqam, _)" });
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return res.status(400).json({ error: "Email noto'g'ri" });
-  }
   if (password.length < 6) {
     return res.status(400).json({ error: "Parol kamida 6 belgi bo'lishi kerak" });
   }
 
-  const exists = await db.get('SELECT username, email FROM users WHERE username = ? OR email = ?', username, email);
+  // Email so'ralmaydi: users.email majburiy va noyob bo'lgani uchun ichki o'rinbosar yoziladi
+  const email = `${username.toLowerCase()}${PLACEHOLDER_EMAIL}`;
+  const exists = await db.get('SELECT 1 FROM users WHERE username = ? OR email = ?', username, email);
   if (exists) {
-    const field = exists.username.toLowerCase() === username.toLowerCase() ? 'Bu login' : 'Bu email';
-    return res.status(409).json({ error: `${field} allaqachon band` });
+    return res.status(409).json({ error: 'Bu login allaqachon band' });
   }
 
   const result = await db.run(
@@ -187,6 +187,48 @@ app.put('/api/password', auth, async (req, res) => {
   // boshqa qurilmalardagi sessiyalarni yopamiz
   await db.run('DELETE FROM sessions WHERE user_id = ? AND token != ?', req.user.id, req.token);
   res.json({ ok: true });
+});
+
+// --- Reyting: games jadvalidan hisoblanadi ---
+// Ochko: g'alaba uchun Oson — 1, O'rta — 2, Qiyin — 3
+const LEADERBOARD_SIZE = 50;
+
+app.get('/api/leaderboard', auth, async (req, res) => {
+  const level = LEVELS.includes(req.query.level) ? req.query.level : 'all';
+  const rows = await db.all(
+    `SELECT u.id, u.username, u.avatar, u.favorite_team,
+            COUNT(*) AS games,
+            SUM(g.result = 'win') AS wins,
+            SUM(g.player_goals) AS goals,
+            SUM(CASE WHEN g.result = 'win'
+                     THEN CASE g.difficulty WHEN 'easy' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+                     ELSE 0 END) AS points
+     FROM games g JOIN users u ON u.id = g.user_id
+     WHERE ? = 'all' OR g.difficulty = ?
+     GROUP BY u.id
+     ORDER BY points DESC, wins DESC, goals DESC, u.id`,
+    level,
+    level
+  );
+
+  const ranked = rows.map((r, i) => ({
+    rank: i + 1,
+    userId: r.id,
+    username: r.username,
+    avatar: r.avatar,
+    favoriteTeam: r.favorite_team,
+    games: r.games,
+    wins: r.wins,
+    winRate: pct(r.wins, r.games),
+    goals: r.goals,
+    points: r.points,
+  }));
+  res.json({
+    level,
+    players: ranked.length,
+    top: ranked.slice(0, LEADERBOARD_SIZE),
+    me: ranked.find((r) => r.userId === req.user.id) ?? null,
+  });
 });
 
 // --- O'yin natijasini saqlash ---

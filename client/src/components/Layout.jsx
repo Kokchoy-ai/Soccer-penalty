@@ -16,6 +16,7 @@ export default function Layout({ children }) {
         <NavLink to="/" className="nav-brand">⚽ Soccer Penalty</NavLink>
         <nav className="nav-links">
           <NavLink to="/" end>O'ynash</NavLink>
+          <NavLink to="/leaderboard">Reyting</NavLink>
           <NavLink to="/profile">Profil</NavLink>
         </nav>
         <div className="nav-user">

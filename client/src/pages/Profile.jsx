@@ -138,7 +138,7 @@ function ProfileCard() {
         <div className="profile-avatar">{editing ? avatar : user.avatar}</div>
         <div>
           <h2>{user.username}</h2>
-          <div className="muted">{user.email}</div>
+          {user.email && <div className="muted">{user.email}</div>}
           <div className="muted">
             Sevimli klub: <b>{user.favoriteTeam || '—'}</b> · A'zo: {formatDate(user.createdAt, false)}
           </div>

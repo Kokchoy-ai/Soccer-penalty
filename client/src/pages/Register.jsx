@@ -6,7 +6,7 @@ import AuthLayout from './AuthLayout.jsx';
 export default function Register() {
   const { register } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ username: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ username: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -18,7 +18,7 @@ export default function Register() {
     if (form.password !== form.confirm) return setError('Parollar mos emas');
     setBusy(true);
     try {
-      await register({ username: form.username, email: form.email, password: form.password });
+      await register({ username: form.username, password: form.password });
       navigate('/');
     } catch (err) {
       setError(err.message);
@@ -33,10 +33,6 @@ export default function Register() {
         <label>
           Login
           <input value={form.username} onChange={set('username')} placeholder="masalan: messi10" required />
-        </label>
-        <label>
-          Email
-          <input type="email" value={form.email} onChange={set('email')} placeholder="siz@mail.uz" required />
         </label>
         <label>
           Parol

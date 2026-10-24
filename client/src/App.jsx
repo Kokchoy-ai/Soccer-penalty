@@ -6,6 +6,7 @@ import Login from './pages/Login.jsx';
 import Home from './pages/Home.jsx';
 import Play from './pages/Play.jsx';
 import Profile from './pages/Profile.jsx';
+import Leaderboard from './pages/Leaderboard.jsx';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -24,6 +25,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<Protected><Home /></Protected>} />
       <Route path="/play" element={<Protected><Play /></Protected>} />
+      <Route path="/leaderboard" element={<Protected><Leaderboard /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/login" element={<GuestOnly><Login /></GuestOnly>} />
       <Route path="/register" element={<GuestOnly><Register /></GuestOnly>} />

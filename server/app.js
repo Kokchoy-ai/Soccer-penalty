@@ -238,6 +238,62 @@ app.post('/api/telegram', async (req, res) => {
   res.json({ ok: true });
 });
 
+// --- Telegram Mini App orqali avtomatik kirish ---
+// initData imzosi: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+const TG_AUTH_MAX_AGE = 24 * 60 * 60; // soniya
+
+function verifyTelegramInitData(initData) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get('hash') ?? '';
+  params.delete('hash');
+  const dataCheck = [...params].map(([k, v]) => `${k}=${v}`).sort().join('\n');
+
+  const secret = crypto.createHmac('sha256', 'WebAppData').update(TG_TOKEN).digest();
+  const expected = crypto.createHmac('sha256', secret).update(dataCheck).digest('hex');
+  if (hash.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(expected))) {
+    return null;
+  }
+
+  const authDate = Number(params.get('auth_date'));
+  if (!authDate || Date.now() / 1000 - authDate > TG_AUTH_MAX_AGE) return null;
+  try {
+    return JSON.parse(params.get('user'));
+  } catch {
+    return null;
+  }
+}
+
+// Telegram username'idan bo'sh login tanlaymiz, bo'lmasa tg<id>
+async function pickUsername(tgUser) {
+  const candidates = [];
+  if (/^[a-zA-Z0-9_]{3,20}$/.test(tgUser.username ?? '')) candidates.push(tgUser.username);
+  candidates.push(`tg${tgUser.id}`);
+  for (const name of candidates) {
+    if (!(await db.get('SELECT 1 FROM users WHERE username = ?', name))) return name;
+  }
+  return `tg${tgUser.id}_${crypto.randomInt(1000, 10000)}`;
+}
+
+app.post('/api/telegram-auth', async (req, res) => {
+  const tgUser = TG_TOKEN ? verifyTelegramInitData(String(req.body?.initData ?? '')) : null;
+  if (!tgUser?.id) return res.status(401).json({ error: "Telegram ma'lumotlari tasdiqlanmadi" });
+
+  let user = await db.get('SELECT * FROM users WHERE telegram_id = ?', tgUser.id);
+  if (!user) {
+    // Parol bilan kirish uchun ishlatilmaydigan tasodifiy parol
+    const result = await db.run(
+      'INSERT INTO users (username, email, password_hash, telegram_id) VALUES (?, ?, ?, ?)',
+      await pickUsername(tgUser),
+      `tg${tgUser.id}@telegram.local`,
+      hashPassword(crypto.randomBytes(32).toString('hex')),
+      tgUser.id
+    );
+    user = await db.get('SELECT * FROM users WHERE id = ?', result.lastInsertRowid);
+  }
+
+  res.json({ token: await createSession(user.id), user: publicUser(user) });
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Server xatosi' });

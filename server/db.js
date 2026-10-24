@@ -61,6 +61,11 @@ async function migrate() {
   if (!userColumns.includes('favorite_team')) {
     await client.execute("ALTER TABLE users ADD COLUMN favorite_team TEXT NOT NULL DEFAULT ''");
   }
+  // Telegram orqali kirish uchun
+  if (!userColumns.includes('telegram_id')) {
+    await client.execute('ALTER TABLE users ADD COLUMN telegram_id INTEGER');
+  }
+  await client.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_telegram ON users(telegram_id)');
 }
 
 // Serverless muhitda har bir sovuq start'da bir marta bajariladi

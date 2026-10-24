@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = 'sp_token';
+// Telegram Mini App ichida ochilganda imzolangan foydalanuvchi ma'lumotlari
+const tgInitData = window.Telegram?.WebApp?.initData || '';
 
 export async function api(path, { method, body, token } = {}) {
   const res = await fetch(`/api${path}`, {
@@ -20,14 +22,27 @@ export async function api(path, { method, body, token } = {}) {
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(Boolean(token));
+  const [loading, setLoading] = useState(Boolean(token || tgInitData));
 
   useEffect(() => {
-    if (!token) return;
-    api('/me', { token })
-      .then((d) => setUser(d.user))
-      .catch(() => saveToken(null))
-      .finally(() => setLoading(false));
+    const telegramLogin = () =>
+      api('/telegram-auth', { body: { initData: tgInitData } }).then((d) => {
+        saveToken(d.token);
+        setUser(d.user);
+      });
+
+    // Saqlangan sessiya bo'lsa o'shani, bo'lmasa Telegram orqali kiramiz
+    const check = token
+      ? api('/me', { token })
+          .then((d) => setUser(d.user))
+          .catch(() => {
+            saveToken(null);
+            if (tgInitData) return telegramLogin();
+          })
+      : tgInitData
+        ? telegramLogin()
+        : null;
+    check?.catch(() => {}).finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function saveToken(t) {

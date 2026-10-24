@@ -1,0 +1,220 @@
+import express from 'express';
+import cors from 'cors';
+import crypto from 'node:crypto';
+import db from './db.js';
+import { goalsOf, validateMatch } from './match.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const AVATARS = ['⚽', '🧤', '🦁', '🐺', '🦅', '🔥', '⭐', '👑', '🐉', '🚀', '🐯', '⚡'];
+const LEVELS = ['easy', 'medium', 'hard'];
+
+// --- Parol xeshlash (scrypt, qo'shimcha kutubxonasiz) ---
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(':');
+  const candidate = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(candidate, Buffer.from(hash, 'hex'));
+}
+
+async function createSession(userId) {
+  const token = crypto.randomBytes(32).toString('hex');
+  await db.run('INSERT INTO sessions (token, user_id) VALUES (?, ?)', token, userId);
+  return token;
+}
+
+const publicUser = (u) => ({
+  id: u.id,
+  username: u.username,
+  email: u.email,
+  avatar: u.avatar,
+  favoriteTeam: u.favorite_team,
+  createdAt: u.created_at,
+});
+
+// --- Ro'yxatdan o'tish ---
+app.post('/api/register', async (req, res) => {
+  const username = String(req.body?.username ?? '').trim();
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const password = String(req.body?.password ?? '');
+
+  if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+    return res.status(400).json({ error: "Login 3–20 belgi bo'lishi kerak (harf, raqam, _)" });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: "Email noto'g'ri" });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: "Parol kamida 6 belgi bo'lishi kerak" });
+  }
+
+  const exists = await db.get('SELECT username, email FROM users WHERE username = ? OR email = ?', username, email);
+  if (exists) {
+    const field = exists.username.toLowerCase() === username.toLowerCase() ? 'Bu login' : 'Bu email';
+    return res.status(409).json({ error: `${field} allaqachon band` });
+  }
+
+  const result = await db.run(
+    'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+    username,
+    email,
+    hashPassword(password)
+  );
+  const user = await db.get('SELECT * FROM users WHERE id = ?', result.lastInsertRowid);
+
+  res.status(201).json({ token: await createSession(user.id), user: publicUser(user) });
+});
+
+// --- Kirish (login yoki email bilan) ---
+app.post('/api/login', async (req, res) => {
+  const login = String(req.body?.login ?? '').trim();
+  const password = String(req.body?.password ?? '');
+
+  const user = await db.get('SELECT * FROM users WHERE username = ? OR email = ?', login, login.toLowerCase());
+  if (!user || !verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: "Login yoki parol noto'g'ri" });
+  }
+
+  res.json({ token: await createSession(user.id), user: publicUser(user) });
+});
+
+// --- Joriy foydalanuvchi ---
+async function auth(req, res, next) {
+  const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+  const user = await db.get(
+    'SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?',
+    token
+  );
+  if (!user) return res.status(401).json({ error: 'Avtorizatsiya kerak' });
+  req.user = user;
+  req.token = token;
+  next();
+}
+
+app.get('/api/me', auth, (req, res) => res.json({ user: publicUser(req.user) }));
+
+app.post('/api/logout', auth, async (req, res) => {
+  await db.run('DELETE FROM sessions WHERE token = ?', req.token);
+  res.json({ ok: true });
+});
+
+// --- Profil ---
+const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+
+function buildStats(games) {
+  const byLevel = Object.fromEntries(LEVELS.map((l) => [l, { games: 0, wins: 0 }]));
+  let wins = 0, goalsFor = 0, goalsAgainst = 0, shots = 0, cpuShots = 0, saves = 0, run = 0, best = 0;
+
+  for (const g of games) {
+    const cpu = JSON.parse(g.cpu_kicks);
+    goalsFor += g.player_goals;
+    goalsAgainst += g.cpu_goals;
+    shots += JSON.parse(g.player_kicks).length;
+    cpuShots += cpu.length;
+    saves += cpu.filter((o) => o === 'saved').length;
+    byLevel[g.difficulty].games++;
+    if (g.result === 'win') {
+      wins++;
+      byLevel[g.difficulty].wins++;
+      best = Math.max(best, ++run);
+    } else {
+      run = 0;
+    }
+  }
+
+  return {
+    games: games.length,
+    wins,
+    losses: games.length - wins,
+    winRate: pct(wins, games.length),
+    goalsFor,
+    goalsAgainst,
+    shots,
+    accuracy: pct(goalsFor, shots),
+    saves,
+    saveRate: pct(saves, cpuShots),
+    bestStreak: best,
+    currentStreak: run,
+    byLevel,
+  };
+}
+
+app.get('/api/profile', auth, async (req, res) => {
+  const games = await db.all('SELECT * FROM games WHERE user_id = ? ORDER BY id', req.user.id);
+  const recent = games
+    .slice(-10)
+    .reverse()
+    .map((g) => ({
+      id: g.id,
+      difficulty: g.difficulty,
+      playerGoals: g.player_goals,
+      cpuGoals: g.cpu_goals,
+      result: g.result,
+      player: JSON.parse(g.player_kicks),
+      cpu: JSON.parse(g.cpu_kicks),
+      createdAt: g.created_at,
+    }));
+  res.json({ user: publicUser(req.user), stats: buildStats(games), recent });
+});
+
+app.put('/api/profile', auth, async (req, res) => {
+  const avatar = String(req.body?.avatar ?? req.user.avatar);
+  const favoriteTeam = String(req.body?.favoriteTeam ?? '').trim();
+  if (!AVATARS.includes(avatar)) return res.status(400).json({ error: "Bunday avatar yo'q" });
+  if (favoriteTeam.length > 40) return res.status(400).json({ error: 'Klub nomi 40 belgidan oshmasin' });
+
+  await db.run('UPDATE users SET avatar = ?, favorite_team = ? WHERE id = ?', avatar, favoriteTeam, req.user.id);
+  const user = await db.get('SELECT * FROM users WHERE id = ?', req.user.id);
+  res.json({ user: publicUser(user) });
+});
+
+app.put('/api/password', auth, async (req, res) => {
+  const current = String(req.body?.current ?? '');
+  const next = String(req.body?.next ?? '');
+  if (!verifyPassword(current, req.user.password_hash)) {
+    return res.status(400).json({ error: "Joriy parol noto'g'ri" });
+  }
+  if (next.length < 6) return res.status(400).json({ error: "Yangi parol kamida 6 belgi bo'lishi kerak" });
+
+  await db.run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(next), req.user.id);
+  // boshqa qurilmalardagi sessiyalarni yopamiz
+  await db.run('DELETE FROM sessions WHERE user_id = ? AND token != ?', req.user.id, req.token);
+  res.json({ ok: true });
+});
+
+// --- O'yin natijasini saqlash ---
+app.post('/api/games', auth, async (req, res) => {
+  const difficulty = String(req.body?.difficulty ?? '');
+  const { player, cpu } = req.body ?? {};
+  if (!LEVELS.includes(difficulty)) return res.status(400).json({ error: "Noma'lum daraja" });
+
+  const result = validateMatch(player, cpu);
+  if (!result) return res.status(400).json({ error: "O'yin ma'lumotlari noto'g'ri" });
+
+  const info = await db.run(
+    `INSERT INTO games (user_id, difficulty, player_goals, cpu_goals, result, player_kicks, cpu_kicks)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    req.user.id,
+    difficulty,
+    goalsOf(player),
+    goalsOf(cpu),
+    result,
+    JSON.stringify(player),
+    JSON.stringify(cpu)
+  );
+  res.status(201).json({ id: info.lastInsertRowid, result });
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ error: 'Server xatosi' });
+});
+
+export default app;

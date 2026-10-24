@@ -1,0 +1,14 @@
+{
+  "name": "soccer-penalty-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "cors": "^2.8.5",
+    "express": "^5.3.0"
+  }
+}

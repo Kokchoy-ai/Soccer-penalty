@@ -212,6 +212,32 @@ app.post('/api/games', auth, async (req, res) => {
   res.status(201).json({ id: info.lastInsertRowid, result });
 });
 
+// --- Telegram bot webhook: /start ga o'yinni ochadigan tugma bilan javob ---
+const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN?.trim();
+const TG_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+const WEBAPP_URL = process.env.WEBAPP_URL?.trim();
+
+app.post('/api/telegram', async (req, res) => {
+  if (!TG_TOKEN || req.get('x-telegram-bot-api-secret-token') !== TG_SECRET) {
+    return res.status(401).json({ error: "Ruxsat yo'q" });
+  }
+
+  const message = req.body?.message;
+  if (message?.text?.startsWith('/start')) {
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: message.chat.id,
+        text: "⚽ Soccer Penalty — kompyuterga qarshi penaltilar seriyasi!\n\nO'ynash uchun pastdagi tugmani bosing.",
+        reply_markup: { inline_keyboard: [[{ text: "⚽ O'ynash", web_app: { url: WEBAPP_URL } }]] },
+      }),
+    });
+  }
+  // Telegram qayta yubormasligi uchun har doim 200 qaytaramiz
+  res.json({ ok: true });
+});
+
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'Server xatosi' });

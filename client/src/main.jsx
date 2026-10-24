@@ -5,6 +5,13 @@ import App from './App.jsx';
 import { AuthProvider } from './auth.jsx';
 import './styles.css';
 
+// Telegram ichida ochilgan bo'lsa: tayyorligini bildirib, to'liq ekranga yoyamiz
+const tg = window.Telegram?.WebApp;
+if (tg?.initData) {
+  tg.ready();
+  tg.expand();
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>

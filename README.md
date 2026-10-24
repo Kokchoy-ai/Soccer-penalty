@@ -33,6 +33,13 @@ Vercelda fayl tizimi saqlanmaydi, shuning uchun baza sifatida [Turso](https://tu
 
 Tuzilma: `client/dist` statik sayt sifatida, `api/index.js` esa `server/app.js` dagi Express ilovasini serverless funksiya sifatida ishga tushiradi.
 
+## Telegram bot (Mini App)
+Bot `/start` ga "⚽ O'ynash" tugmasi bilan javob beradi, menyu tugmasi ham o'yinni Telegram ichida ochadi.
+Webhook: `POST /api/telegram` (`server/app.js`).
+
+- Vercel o'zgaruvchilari: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `WEBAPP_URL`
+- Botni sozlash (webhook, menyu, buyruqlar): `.env.local` ga `TELEGRAM_BOT_TOKEN` va `TELEGRAM_WEBHOOK_SECRET` yozib, `npm run telegram:setup`
+
 ## Sahifalar
 - `/register`, `/login` — ro'yxatdan o'tish va kirish
 - `/` — bosh menyu: qiyinlik darajasi (Oson / O'rta / Qiyin) va qisqa statistika

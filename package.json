@@ -6,6 +6,7 @@
     "node": "24.x"
   },
   "scripts": {
+    "telegram:setup": "node --env-file=.env.local scripts/telegram-setup.mjs",
     "install:all": "npm install && npm install --prefix server && npm install --prefix client",
     "dev": "concurrently -n server,client -c green,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\""
   },
